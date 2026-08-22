@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+.print-sheet {
+  display: none;
+}
+
+@media print {
+  body {
+    background: white;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-sheet {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    color: #111827;
+    font-family: Arial, sans-serif;
+    font-size: 10pt;
+    visibility: visible;
+  }
+
+  .print-sheet * {
+    visibility: visible;
+  }
+
+  .print-sheet-header {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 2px solid #111827;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+  }
+
+  .print-sheet h1 {
+    margin: 2px 0 6px;
+    font-size: 18pt;
+  }
+
+  .print-sheet p {
+    margin: 3px 0;
+  }
+
+  .print-sheet-kicker {
+    color: #2563eb;
+    font-size: 9pt;
+    font-weight: bold;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .print-sheet-meta {
+    min-width: 220px;
+    padding-top: 20px;
+  }
+
+  .print-sheet table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  .print-sheet th,
+  .print-sheet td {
+    border: 1px solid #9ca3af;
+    padding: 6px 5px;
+    text-align: left;
+  }
+
+  .print-sheet th {
+    background: #e5e7eb;
+    font-size: 8pt;
+    text-transform: uppercase;
+  }
+
+  .print-sheet td {
+    height: 24px;
+  }
+
+  .print-sheet .signature-cell {
+    min-width: 95px;
+  }
+
+  .print-sheet-footer {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 34px;
+  }
+}
