@@ -42,6 +42,23 @@ def _normalize_day(raw: str) -> str | None:
     return DAY_ALIASES.get(raw.strip().upper())
 
 
+def _get_full_name_map() -> dict[str, str]:
+    """Load full_name -> initial map from DB if available."""
+    try:
+        import sqlite3, os
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "classcover.db")
+        if not os.path.exists(db_path):
+            return {}
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT name, full_name FROM teachers WHERE full_name IS NOT NULL")
+        mapping = {row[1].strip().upper(): row[0] for row in cur.fetchall() if row[1]}
+        conn.close()
+        return mapping
+    except Exception:
+        return {}
+
+
 def _parse_cell(raw: str) -> dict | None:
     """Parse a single timetable cell into {subject, teacher, room}."""
     if not raw or not raw.strip() or raw.strip().upper() in {"-", "FREE", "--"}:
@@ -79,15 +96,44 @@ def _asc_class_names(lines: list[str]) -> list[str]:
     return class_names
 
 
+# Known room / location tokens that can appear glued to a teacher code
+_ROOM_TOKENS = {"CLAB", "LAB", "LIB", "COMP"}
+
+# Known subject / course / section tokens that MUST NEVER be treated as teacher codes
+_SUBJECT_TOKENS = {
+    "LIT", "LANG", "HIN", "SLHIN", "TLHIN", "MAR", "PHY", "BIO", "CHEM", "MATH",
+    "HIST", "HISTORY", "GEOG", "ART", "MUS", "PHE", "EVST", "VED", "SUPW", "ALP",
+    "SA", "ZP", "HCS", "SS", "FM", "SEC", "PRI", "CT", "PCB", "COCURRICLAR", "ACADEMICS",
+    "FREE", "BREAK", "PRAYER"
+}
+
+
 def _asc_teacher_codes(lines: list[str], class_names: list[str]) -> list[str]:
     teacher_codes: list[str] = []
     for index, line in enumerate(lines):
+        # Split on slashes for multi-teacher lines like "IC / CT / AF / AD"
         parts = [part.strip() for part in re.split(r"\s*/\s*", line)]
-        if not parts or not all(re.fullmatch(r"[A-Za-z]{2,5}", part) for part in parts):
+        cleaned_parts: list[str] = []
+        for part in parts:
+            if not part:
+                continue
+            # Handle "AD CLAB" -> teacher="AD", strip CLAB
+            tokens = part.split()
+            if len(tokens) == 2 and tokens[1].upper() in _ROOM_TOKENS:
+                part_candidate = tokens[0].upper()
+            elif len(tokens) == 1:
+                part_candidate = tokens[0].upper()
+            else:
+                continue
+
+            if part_candidate not in _SUBJECT_TOKENS:
+                cleaned_parts.append(part_candidate)
+
+        if not cleaned_parts or not all(re.fullmatch(r"[A-Z]{2,5}", p) for p in cleaned_parts):
             continue
-        if len(parts) == 1 and (index == 0 or not class_names):
+        if len(cleaned_parts) == 1 and (index == 0 or not class_names):
             continue
-        for teacher_code in parts:
+        for teacher_code in cleaned_parts:
             if teacher_code not in teacher_codes:
                 teacher_codes.append(teacher_code)
     return teacher_codes
@@ -127,8 +173,19 @@ def _asc_page_class_name(page_text: str) -> str | None:
     return candidates[-1] if candidates else None
 
 
+def _is_break_or_skip(raw: str) -> bool:
+    """Return True if this cell is a break / prayer / assembly — not a teaching slot."""
+    if not raw or not raw.strip():
+        return True
+    lowered = raw.lower()
+    skip_markers = {"prayer", "break", "reyar", "kaerb", "ylbmessa",
+                    "noitcaretni", "assembly", "interaction", "gnol", "trohs"}
+    return any(marker in lowered for marker in skip_markers)
+
+
 def _parse_asc_timetable(file_path: str, kind: str) -> list[dict]:
     rows_out: list[dict] = []
+    full_name_to_initial = _get_full_name_map()
 
     with pdfplumber.open(file_path) as pdf:
         if not pdf.pages:
@@ -139,13 +196,19 @@ def _parse_asc_timetable(file_path: str, kind: str) -> list[dict]:
             page_cells: list[tuple[str, int, dict]] = []
             page_teacher_codes: list[str] = []
             page_class_name = _asc_page_class_name(page.extract_text() or "")
-            for table in page.extract_tables():
-                if not _is_asc_table(table):
+
+            found_tables = page.find_tables()
+
+            for table_obj in found_tables:
+                table = table_obj.extract()
+                if not table or not _is_asc_table(table):
                     continue
                 found_any_table = True
-                period_columns = {}
-                for index, cell in enumerate(table[1]):
-                    lines = (cell or "").splitlines()
+
+                # Build column -> period mapping from header row
+                period_columns: dict[int, int] = {}
+                for index, cell_text in enumerate(table[1]):
+                    lines = (cell_text or "").splitlines()
                     if not lines:
                         continue
                     first_line = lines[0].strip()
@@ -153,6 +216,53 @@ def _parse_asc_timetable(file_path: str, kind: str) -> list[dict]:
                     if match:
                         period_columns[index] = int(match.group(1))
 
+                # Build period -> x-range mapping from header row's physical cells.
+                # The header row is row index 1 in the table.
+                # Physical cell index matches table column index 1:1.
+                period_x_ranges: dict[int, tuple[float, float]] = {}
+                if table_obj.cells and period_columns:
+                    row_tops = sorted(set(round(c[1], 0) for c in table_obj.cells))
+                    if len(row_tops) >= 2:
+                        header_top = row_tops[1]
+                        header_phys_cells = sorted(
+                            [c for c in table_obj.cells if round(c[1], 0) == header_top],
+                            key=lambda c: c[0]
+                        )
+                        for col_idx, period in period_columns.items():
+                            if col_idx < len(header_phys_cells):
+                                phys_cell = header_phys_cells[col_idx]
+                                period_x_ranges[period] = (phys_cell[0], phys_cell[2])
+
+                # Detect merged cells: map (row_idx, first_period) -> [period, ...]
+                merged_periods_by_row: dict[tuple[int, int], list[int]] = {}
+                if period_x_ranges and table_obj.cells:
+                    row_tops = sorted(set(round(c[1], 0) for c in table_obj.cells))
+                    # Only check data rows (skip header rows 0 and 1)
+                    data_row_tops = row_tops[2:] if len(row_tops) > 2 else []
+                    periods_sorted = sorted(period_x_ranges.keys())
+
+                    for cell_bbox in table_obj.cells:
+                        x0, top, x1, bottom = cell_bbox
+                        top_rounded = round(top, 0)
+                        if top_rounded not in data_row_tops:
+                            continue
+
+                        row_data_idx = data_row_tops.index(top_rounded)
+                        # Which periods does this physical cell cover?
+                        covered = []
+                        for period in periods_sorted:
+                            pcx0, pcx1 = period_x_ranges[period]
+                            col_width = pcx1 - pcx0
+                            overlap = min(x1, pcx1) - max(x0, pcx0)
+                            if overlap > col_width * 0.3:
+                                covered.append(period)
+
+                        if len(covered) > 1:
+                            first_period = covered[0]
+                            merged_periods_by_row[(row_data_idx, first_period)] = covered
+
+                # Now parse cells with merged-cell awareness
+                data_row_index = 0
                 for row in table[2:]:
                     if not row:
                         continue
@@ -162,17 +272,68 @@ def _parse_asc_timetable(file_path: str, kind: str) -> list[dict]:
                     for column, period in period_columns.items():
                         if column >= len(row):
                             continue
-                        cell = _parse_asc_cell(row[column] or "")
-                        if not cell:
+                        raw_text = (row[column] or "").strip()
+                        if _is_break_or_skip(raw_text):
                             continue
-                        page_cells.append((day, period, cell))
-                        page_teacher_codes.extend(cell["teacher_codes"])
 
-            if not page_cells or not page_teacher_codes:
+                        # Determine all periods this cell covers
+                        periods_for_cell = merged_periods_by_row.get(
+                            (data_row_index, period), [period]
+                        )
+
+                        cell = _parse_asc_cell(raw_text)
+                        if cell:
+                            for p in periods_for_cell:
+                                page_cells.append((day, p, cell))
+                            page_teacher_codes.extend(cell["teacher_codes"])
+                        elif kind == "faculty":
+                            lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
+                            subject = lines[0] if lines else raw_text
+                            class_names = _asc_class_names(lines)
+                            fallback_cell = {
+                                "subject": subject,
+                                "teacher_codes": [],
+                                "class_names": class_names or ["Unknown Class"],
+                            }
+                            for p in periods_for_cell:
+                                page_cells.append((day, p, fallback_cell))
+                    data_row_index += 1
+
+            if not page_cells:
                 continue
-            page_teacher_code = Counter(page_teacher_codes).most_common(1)[0][0]
+            # Determine the page owner teacher from the top title (top < 40)
+            page_text = page.extract_text() or ""
+            words = page.extract_words()
+            title_words = sorted([w for w in words if w['top'] < 40], key=lambda w: w['x0'])
+            page_title = ' '.join(w['text'] for w in title_words).strip().upper()
+
+            # Map title to teacher initial
+            page_teacher_code = None
+            if page_title:
+                # 1. Check exact match or substring in DB full names
+                for full_name, initial in full_name_to_initial.items():
+                    if full_name == page_title or full_name in page_title or page_title in full_name:
+                        page_teacher_code = initial
+                        break
+                
+                # 2. Fallback: generate initials from title words (e.g. "KIRAN POOJARI" -> "KP")
+                if not page_teacher_code:
+                    title_initials = ''.join(w[0] for w in page_title.split() if w[0].isalpha())
+                    if title_initials and len(title_initials) <= 5:
+                        page_teacher_code = title_initials
+
+            # 3. Fallback to most common code on page if title wasn't resolvable
+            if not page_teacher_code and page_teacher_codes:
+                page_teacher_code = Counter(page_teacher_codes).most_common(1)[0][0]
+
+            if not page_teacher_code:
+                continue  # Can't determine page owner, skip
+
             for day, period, cell in page_cells:
-                teacher_codes = cell["teacher_codes"] if kind == "class" else [page_teacher_code]
+                if kind == "faculty":
+                    teacher_codes = [page_teacher_code]
+                else:
+                    teacher_codes = cell["teacher_codes"]
                 class_names = [page_class_name] if kind == "class" and page_class_name else cell["class_names"]
                 for class_name in class_names:
                     if class_name == "Unknown Class":
@@ -192,9 +353,9 @@ def _parse_asc_timetable(file_path: str, kind: str) -> list[dict]:
                 "No aSc timetable structure could be detected in this PDF."
             )
 
-    unique_rows: dict[tuple[str, int, str], dict] = {}
+    unique_rows: dict[tuple[str, int, str, str], dict] = {}
     for row in rows_out:
-        key = (row["day"], row["period"], row["class_name"])
+        key = (row["day"], row["period"], row["class_name"], row["teacher"])
         unique_rows.setdefault(key, row)
     return list(unique_rows.values())
 

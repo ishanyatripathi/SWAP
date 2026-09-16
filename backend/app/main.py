@@ -5,6 +5,7 @@ Run with:  uvicorn app.main:app --reload
 Docs at:   http://127.0.0.1:8000/docs
 """
 import logging
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -43,7 +44,8 @@ def health():
     return {"status": "ok", "app": settings.APP_NAME}
 
 
-frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+application_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+frontend_dist = application_root / "frontend" / "dist"
 if frontend_dist.is_dir():
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
 else:

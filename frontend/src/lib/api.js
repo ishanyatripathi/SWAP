@@ -3,7 +3,9 @@
  * Centralizing this here means the base URL (and later, auth headers
  * for the multi-school SaaS version) only needs to change in one place.
  */
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1'
+const BASE_URL = import.meta.env.DEV 
+  ? 'http://127.0.0.1:8000/api/v1' 
+  : '/api/v1'
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -52,4 +54,6 @@ export const api = {
     if (dateTo) params.set('date_to', dateTo)
     return request(`/substitutions?${params.toString()}`)
   },
+  // Returns teacher-wise and period-wise availability for the given day code.
+  getAvailability: (day) => request(`/availability?day=${day}`),
 }

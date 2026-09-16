@@ -17,7 +17,7 @@ function UploadCard({ kind, title, description, onUploaded }) {
         setMessage(`${result.rows_imported} lecture rows imported from ${result.filename}.`)
       } else {
         setStatus('failed')
-        setMessage(result.error_message || 'Could not parse this PDF.')
+        setMessage(result.error_message || 'Could not parse this JSON file.')
       }
       onUploaded?.()
     } catch (e) {
@@ -39,7 +39,7 @@ function UploadCard({ kind, title, description, onUploaded }) {
         }}
         className="mt-4 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center"
       >
-        <p className="text-[13px] text-slate-500">Drag & drop the PDF here, or</p>
+        <p className="text-[13px] text-slate-500">Drag & drop the JSON here, or</p>
         <button
           onClick={() => inputRef.current?.click()}
           className="mt-2 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50"
@@ -49,7 +49,7 @@ function UploadCard({ kind, title, description, onUploaded }) {
         <input
           ref={inputRef}
           type="file"
-          accept="application/pdf"
+          accept="application/json,.json"
           className="hidden"
           onChange={(e) => handleFile(e.target.files?.[0])}
         />
@@ -98,20 +98,20 @@ export default function Timetables() {
     <div className="mx-auto max-w-6xl px-6 py-8">
       <h1 className="font-display text-[22px] font-semibold tracking-tight text-slate-900">Timetables</h1>
       <p className="mt-1 text-[13.5px] text-slate-500">
-        Upload once during setup — S.W.A.P parses and stores it, so you never upload a PDF again on a normal morning.
+        Upload the JSON timetable export for each timetable view. The app reads the assignment data directly and stores it for daily substitution planning.
       </p>
 
       <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
         <UploadCard
           kind="faculty"
           title="Faculty Timetable"
-          description="A grid of every teacher's weekly schedule (PDF)."
+          description="JSON export of every teacher's weekly schedule."
           onUploaded={refresh}
         />
         <UploadCard
           kind="class"
           title="Student Class-wise Timetable"
-          description="The weekly timetable for each class or section, including teacher initials (PDF)."
+          description="JSON export of each class or section timetable with teacher initials."
           onUploaded={refresh}
         />
       </div>

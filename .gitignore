@@ -1,0 +1,27 @@
+# Sensitive school and local runtime data
+Timetables/
+Timetables/**/*.json
+Timetables/*.json
+backend/uploads/
+backend/uploads/**/*.json
+backend/uploads/*.json
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+*.db
+*.sqlite
+*.sqlite3
+
+# Local environment and build output
+.env
+.env.*
+release/
+build/
+backend/.build-venv/
+node_modules/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Ignore generated package caches, but keep actual project config files tracked

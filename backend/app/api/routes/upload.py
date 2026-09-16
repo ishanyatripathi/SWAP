@@ -1,14 +1,14 @@
-"""
-Timetable PDF upload endpoints.
+"""Timetable JSON upload endpoints.
 
-This is the "first-time setup" workflow: upload once, and it's parsed
-and stored so the coordinator never has to touch a PDF again on a normal
-morning. Re-uploading (e.g. a new term's timetable) replaces the stored
-rows for that kind ("class" or "faculty").
+The app now reads the timetable data directly from the JSON export in the
+project's Timetables folder. The upload flow still stores an audit record,
+but it no longer depends on PDF parsing or PDF-only file selection.
 """
+import json
 import os
 import shutil
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
@@ -18,11 +18,7 @@ from app.db.database import get_db
 from app.models.teacher import Teacher, SchoolClass
 from app.models.timetable import TimetableSlot, TimetableUpload
 from app.schemas.timetable import TimetableUploadOut
-from app.services.pdf_parser import (
-    parse_class_timetable,
-    parse_faculty_timetable,
-    TimetableParseError,
-)
+from app.services.json_timetable_parser import parse_json_timetable, TimetableParseError
 
 router = APIRouter(prefix="/timetables", tags=["timetables"])
 settings = get_settings()
@@ -47,7 +43,9 @@ def _get_or_create_class(db: Session, name: str) -> SchoolClass:
 
 
 def _parse_uploaded_timetable(file_path: str, kind: str) -> list[dict]:
-    return parse_class_timetable(file_path) if kind == "class" else parse_faculty_timetable(file_path)
+    if kind not in {"class", "faculty"}:
+        raise ValueError(f"Unsupported timetable kind: {kind}")
+    return parse_json_timetable(file_path)
 
 
 @router.post("/upload", response_model=TimetableUploadOut)
@@ -58,6 +56,9 @@ def upload_timetable(
 ):
     if kind not in {"class", "faculty"}:
         raise HTTPException(400, "kind must be 'class' or 'faculty'")
+
+    if not file.filename or not file.filename.lower().endswith(".json"):
+        raise HTTPException(400, "Only JSON timetable files are accepted.")
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     saved_path = os.path.join(settings.UPLOAD_DIR, file.filename)
@@ -79,8 +80,8 @@ def upload_timetable(
 
         if not rows:
             raise TimetableParseError(
-                "The PDF was read but no valid timetable rows were found. "
-                "Check that periods are numbered and days are labeled Mon–Sat."
+                "The JSON was read but no valid timetable rows were found. "
+                "Check that the timetable file contains teacher assignments for each day."
             )
 
         parsed_uploads = [(rows, upload_record)]
@@ -138,7 +139,7 @@ def upload_timetable(
         # reflects what happened.
         db.rollback()
         upload_record.status = "failed"
-        upload_record.error_message = f"Unexpected error while processing this PDF: {exc}"
+        upload_record.error_message = f"Unexpected error while processing this JSON file: {exc}"
         db.commit()
 
     db.refresh(upload_record)

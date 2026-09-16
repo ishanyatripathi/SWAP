@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import Timetables from './pages/Timetables'
 import History from './pages/History'
 import Settings from './pages/Settings'
+import Availability from './pages/Availability'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
             <Route path="/timetables" element={<Timetables />} />
             <Route path="/history" element={<History />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/availability" element={<Availability />} />
           </Routes>
         </main>
         <footer className="px-6 py-4 text-center text-xs text-slate-400">

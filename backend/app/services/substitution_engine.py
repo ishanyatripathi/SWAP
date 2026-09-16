@@ -109,9 +109,16 @@ def preview_substitutions(
             class_name=slot.school_class.name,
             subject=slot.subject,
             room=slot.room,
-            absent_teacher=slot.teacher.name,
-            free_teachers=free,
-            suggested_substitute=suggested,
+            absent_teacher=f"{slot.teacher.full_name} ({slot.teacher.name})" if slot.teacher.full_name else slot.teacher.name,
+            free_teachers=[
+                f"{next(t.full_name for t in all_teachers if t.name == name)} ({name})"
+                if next((t.full_name for t in all_teachers if t.name == name), None) else name
+                for name in free
+            ],
+            suggested_substitute=(
+                f"{next(t.full_name for t in all_teachers if t.name == suggested)} ({suggested})"
+                if next((t.full_name for t in all_teachers if t.name == suggested), None) else suggested
+            ) if suggested else None,
         ))
 
     return options
@@ -158,8 +165,10 @@ def generate_substitutions(
             class_name=slot.school_class.name,
             subject=slot.subject,
             room=slot.room,
-            absent_teacher=slot.teacher.name,
-            substitute_teacher=substitute.name if substitute else None,
+            absent_teacher=f"{slot.teacher.full_name} ({slot.teacher.name})" if slot.teacher.full_name else slot.teacher.name,
+            substitute_teacher=(
+                f"{substitute.full_name} ({substitute.name})" if substitute.full_name else substitute.name
+            ) if substitute else None,
             status="Assigned" if substitute else "Unassigned",
         ))
 

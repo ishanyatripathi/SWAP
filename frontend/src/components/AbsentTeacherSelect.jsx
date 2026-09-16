@@ -12,12 +12,21 @@ export default function AbsentTeacherSelect({ teachers, selected, onChange }) {
   const [open, setOpen] = useState(false)
 
   const filtered = useMemo(
-    () => teachers.filter((t) => t.name.toLowerCase().includes(query.toLowerCase())),
+    () => teachers.filter((t) => 
+      t.name.toLowerCase().includes(query.toLowerCase()) || 
+      (t.full_name && t.full_name.toLowerCase().includes(query.toLowerCase()))
+    ),
     [teachers, query]
   )
 
   const toggle = (name) => {
     onChange(selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name])
+  }
+
+  // helper to get display name for selected chips
+  const getDisplayName = (name) => {
+    const t = teachers.find(t => t.name === name);
+    return t?.full_name ? `${t.full_name} (${t.name})` : name;
   }
 
   return (
@@ -28,7 +37,7 @@ export default function AbsentTeacherSelect({ teachers, selected, onChange }) {
             key={name}
             className="flex items-center gap-1.5 rounded-lg bg-brand-50 px-2.5 py-1 text-[13px] font-medium text-brand-700"
           >
-            {name}
+            {getDisplayName(name)}
             <button
               type="button"
               onClick={() => toggle(name)}
@@ -64,9 +73,9 @@ export default function AbsentTeacherSelect({ teachers, selected, onChange }) {
             >
               <span className="flex items-center gap-2">
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-[10.5px] font-semibold text-slate-500">
-                  {t.name.replace(/^(Mr\.|Mrs\.|Ms\.)\s*/, '')[0]}
+                  {(t.full_name || t.name).replace(/^(Mr\.|Mrs\.|Ms\.)\s*/, '')[0]}
                 </span>
-                {t.name}
+                {t.full_name ? `${t.full_name} (${t.name})` : t.name}
                 {t.subject && <span className="text-[12px] text-slate-400">· {t.subject}</span>}
               </span>
               {selected.includes(t.name) && <span className="text-brand-600">✓</span>}

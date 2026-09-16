@@ -5,6 +5,7 @@ const links = [
   { to: '/', label: 'Dashboard' },
   { to: '/timetables', label: 'Timetables' },
   { to: '/history', label: 'History' },
+  { to: '/availability', label: 'Availability' },
   { to: '/settings', label: 'Settings' },
 ]
 

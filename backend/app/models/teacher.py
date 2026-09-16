@@ -17,6 +17,7 @@ class Teacher(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True, index=True)
+    full_name = Column(String, nullable=True)
     subject = Column(String, nullable=True)
     phone = Column(String, nullable=True)   # reserved for future SMS/WhatsApp notifications
     email = Column(String, nullable=True)   # reserved for future login / notifications
