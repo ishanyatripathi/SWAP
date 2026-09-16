@@ -21,8 +21,9 @@ from app.db.database import Base
 class TimetableSlot(Base):
     __tablename__ = "timetable_slots"
     __table_args__ = (
-        # A class can only have one lesson per period per day.
-        UniqueConstraint("day", "period", "class_id", name="uq_class_period_day"),
+        # A teacher can only have one assigned slot per period per day.
+        # Multiple teachers can teach different batches of the same class (electives/labs/languages).
+        UniqueConstraint("day", "period", "teacher_id", name="uq_teacher_period_day"),
     )
 
     id = Column(Integer, primary_key=True, index=True)

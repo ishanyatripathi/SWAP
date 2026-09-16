@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
-from app.db.database import Base, engine
+from app.db.database import Base, engine, ensure_sqlite_schema
 from app.api.router import api_router
 
 # Import models so SQLAlchemy's metadata knows about every table
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 Base.metadata.create_all(bind=engine)
+ensure_sqlite_schema()
 
 app = FastAPI(title=settings.APP_NAME)
 
