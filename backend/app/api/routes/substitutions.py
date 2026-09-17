@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.models.substitution import SubstitutionRun, SubstitutionEntry
 from app.models.school import School
+from app.models.teacher import Teacher
 from app.schemas.substitution import (
     PreviewRequest,
     CoverageOptionOut,
@@ -67,9 +68,15 @@ def preview(payload: PreviewRequest, db: Session = Depends(get_db)):
 @router.post("/confirm", response_model=SubstitutionRunOut)
 def confirm(payload: ConfirmRequest, db: Session = Depends(get_db)):
     """Persists the coordinator's final (possibly manually overridden) choices."""
+    teacher_map = {
+        t.name: f"{t.full_name} ({t.name})" if t.full_name else t.name
+        for t in db.query(Teacher).all()
+    }
+    formatted_absent = [teacher_map.get(name, name) for name in payload.absent_teacher_names]
+
     run = SubstitutionRun(
         date=payload.date,
-        absent_teacher_names=payload.absent_teacher_names,
+        absent_teacher_names=formatted_absent,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     db.add(run)
@@ -96,11 +103,17 @@ def confirm(payload: ConfirmRequest, db: Session = Depends(get_db)):
 @router.post("/generate", response_model=SubstitutionRunOut)
 def generate(payload: GenerateSubstitutionRequest, db: Session = Depends(get_db)):
     """Fully automatic: picks the first free teacher for every lecture and saves immediately."""
+    teacher_map = {
+        t.name: f"{t.full_name} ({t.name})" if t.full_name else t.name
+        for t in db.query(Teacher).all()
+    }
+    formatted_absent = [teacher_map.get(name, name) for name in payload.absent_teacher_names]
+
     results = generate_substitutions(db, _day_code(payload.date), payload.absent_teacher_names)
 
     run = SubstitutionRun(
         date=payload.date,
-        absent_teacher_names=payload.absent_teacher_names,
+        absent_teacher_names=formatted_absent,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     db.add(run)
