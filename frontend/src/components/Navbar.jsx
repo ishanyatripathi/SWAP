@@ -6,6 +6,7 @@ const links = [
   { to: '/timetables', label: 'Timetables' },
   { to: '/history', label: 'History' },
   { to: '/availability', label: 'Availability' },
+  { to: '/free-windows', label: 'Free Windows' },
   { to: '/settings', label: 'Settings' },
 ]
 

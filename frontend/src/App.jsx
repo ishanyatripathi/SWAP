@@ -5,6 +5,7 @@ import Timetables from './pages/Timetables'
 import History from './pages/History'
 import Settings from './pages/Settings'
 import Availability from './pages/Availability'
+import FreeWindows from './pages/FreeWindows'
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
             <Route path="/history" element={<History />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/availability" element={<Availability />} />
+            <Route path="/free-windows" element={<FreeWindows />} />
           </Routes>
         </main>
         <footer className="px-6 py-4 text-center text-xs text-slate-400">
