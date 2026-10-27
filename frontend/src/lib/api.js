@@ -54,6 +54,12 @@ export const api = {
     if (dateTo) params.set('date_to', dateTo)
     return request(`/substitutions?${params.toString()}`)
   },
-  // Returns teacher-wise and period-wise availability for the given day code.
-  getAvailability: (day) => request(`/availability?day=${day}`),
+  // Returns teacher-wise and period-wise availability for the given day code or ISO date string.
+  getAvailability: (dayOrDate) => {
+    // If it looks like YYYY-MM-DD, pass ?date=, otherwise pass ?day=
+    if (dayOrDate && /^\d{4}-\d{2}-\d{2}$/.test(dayOrDate)) {
+      return request(`/availability?date=${dayOrDate}`)
+    }
+    return request(`/availability?day=${dayOrDate}`)
+  },
 }

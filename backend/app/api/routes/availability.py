@@ -14,10 +14,12 @@ from app.db.database import get_db
 from app.models.school import School
 from app.models.timetable import TimetableSlot
 from app.models.teacher import Teacher
+from app.models.substitution import SubstitutionRun, SubstitutionEntry
 from app.schemas.availability import (
     AvailabilityResponse,
     FreePeriodOut,
     PeriodFreeTeacherOut,
+    SubstitutionDutyOut,
     TeacherAvailabilityOut,
 )
 
@@ -48,9 +50,15 @@ def _period_time_label(period_timings: list, period: int) -> str | None:
     return None
 
 
+_WEEKDAY_TO_CODE = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+
+def _day_code(date_str: str) -> str:
+    return _WEEKDAY_TO_CODE[datetime.fromisoformat(date_str).weekday()]
+
 @router.get("", response_model=AvailabilityResponse)
 def get_availability(
-    day: str = Query(..., description="Day code: MON, TUE, WED, THU, FRI, SAT, SUN"),
+    day: str | None = Query(None, description="Day code: MON, TUE, WED, THU, FRI, SAT, SUN"),
+    date: str | None = Query(None, description="Date in YYYY-MM-DD format"),
     db: Session = Depends(get_db),
 ):
     """
@@ -70,7 +78,12 @@ def get_availability(
         all for this day are excluded from the availability output, as their
         schedule is unknown and showing them as "100% free" would be misleading.
     """
-    day = day.upper()
+    if date and not day:
+        day = _day_code(date)
+    elif day:
+        day = day.upper()
+    else:
+        day = "MON"
 
     # ── School settings (for time labels only) ────────────────────────
     school = db.query(School).filter(School.id == 1).first()
@@ -109,22 +122,68 @@ def get_availability(
         .all()
     )
 
+    # ── Substitution duties for this date (if date provided) ──────────
+    # Map teacher display/short name/id -> list of SubstitutionDutyOut
+    # substitution_entries have substitute_teacher stored as string (either initials "KW" or full display "KAVITA WAGH (KW)")
+    subs_by_teacher_id: dict[int, list[SubstitutionDutyOut]] = {}
+    if date:
+        runs = db.query(SubstitutionRun).filter(SubstitutionRun.date == date).all()
+        # Create lookup helpers for teachers
+        teacher_by_name = {t.name.strip().lower(): t for t in teachers}
+        teacher_by_full = {t.full_name.strip().lower(): t for t in teachers if t.full_name}
+        teacher_by_display = {
+            f"{t.full_name} ({t.name})".strip().lower(): t for t in teachers if t.full_name
+        }
+
+        for run in runs:
+            for entry in run.entries:
+                if entry.status == "Assigned" and entry.substitute_teacher:
+                    sub_str = entry.substitute_teacher.strip()
+                    sub_lower = sub_str.lower()
+                    matched_teacher = (
+                        teacher_by_display.get(sub_lower)
+                        or teacher_by_name.get(sub_lower)
+                        or teacher_by_full.get(sub_lower)
+                    )
+                    # If not matched directly, check if sub_str ends with "(NAME)"
+                    if not matched_teacher and "(" in sub_str and sub_str.endswith(")"):
+                        short_code = sub_str.split("(")[-1].rstrip(")").strip().lower()
+                        matched_teacher = teacher_by_name.get(short_code)
+
+                    if matched_teacher:
+                        subs_by_teacher_id.setdefault(matched_teacher.id, []).append(
+                            SubstitutionDutyOut(
+                                period=entry.period,
+                                time_slot=entry.time_slot or _period_time_label(period_timings, entry.period),
+                                class_name=entry.class_name,
+                                absent_teacher=entry.absent_teacher,
+                                room=entry.room,
+                                subject=entry.subject,
+                            )
+                        )
+
     # ── Build teacher-wise view ───────────────────────────────────────
     teacher_wise: list[TeacherAvailabilityOut] = []
     for teacher in teachers:
+        sub_duties = subs_by_teacher_id.get(teacher.id, [])
+        sub_periods = {d.period for d in sub_duties}
+
+        # A period is truly free if not in busy timetable slots AND not assigned a substitution
         free_periods = [
             FreePeriodOut(
                 period=p,
                 time_slot=_period_time_label(period_timings, p),
             )
             for p in all_periods
-            if (teacher.id, p) not in busy
+            if (teacher.id, p) not in busy and p not in sub_periods
         ]
         teacher_wise.append(
             TeacherAvailabilityOut(
                 teacher_name=f"{teacher.full_name} ({teacher.name})" if teacher.full_name else teacher.name,
                 free_periods=free_periods,
                 total_free_periods=len(free_periods),
+                substituted_periods=sub_duties,
+                total_substituted_periods=len(sub_duties),
             )
         )
 
@@ -133,7 +192,8 @@ def get_availability(
     for p in all_periods:
         free_teachers = [
             f"{t.full_name} ({t.name})" if t.full_name else t.name
-            for t in teachers if (t.id, p) not in busy
+            for t in teachers 
+            if (t.id, p) not in busy and p not in {d.period for d in subs_by_teacher_id.get(t.id, [])}
         ]
         period_wise.append(
             PeriodFreeTeacherOut(
